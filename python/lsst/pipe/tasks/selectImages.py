@@ -218,7 +218,7 @@ class WcsSelectImagesTask(BaseSelectImagesTask):
             if imagePoly.overlaps(patchPoly):
                 self.log.info("Selecting calexp %s" % dataRef.dataId)
                 dataRefList.append(dataRef)
-                exposureInfoList.append(BaseExposureInfo(dataRef.dataId, cornersSky))
+                exposureInfoList.append(BaseExposureInfo(dataRef.dataId, corners))
 
         return pipeBase.Struct(
             dataRefList = dataRefList if makeDataRefList else None,
