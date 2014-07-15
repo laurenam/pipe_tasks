@@ -32,6 +32,7 @@ import lsst.pipe.base as pipeBase
 from lsst.meas.astrom.astrom import Astrometry
 from lsst.meas.astrom.sip import makeCreateWcsWithSip
 from .detectorUtil import getCcd
+from lsst.afw.table import Point2DKey, CovarianceMatrix2fKey
 
 class AstrometryConfig(pexConfig.Config):
     solver = pexConfig.ConfigField(
@@ -60,6 +61,7 @@ class AstrometryTask(pipeBase.Task):
 
     def __init__(self, schema, **kwds):
         pipeBase.Task.__init__(self, **kwds)
+<<<<<<< HEAD
         self.centroidKey = schema.addField("centroid.distorted", type="PointD",
                                            doc="centroid distorted for astrometry solver")
         self._astrometer = None
@@ -69,6 +71,33 @@ class AstrometryTask(pipeBase.Task):
         if not self._astrometer:
             self._astrometer = self.AstrometerClass(self.config.solver, log=self.log)
         return self._astrometer
+=======
+        self.tableVersion = tableVersion
+        if tableVersion == 0:
+            self.distortedName = "centroid.distorted"
+            self.centroidKey = schema.addField(self.distortedName, type="PointD",
+                                           doc="centroid distorted for astrometry solver")
+            self.centroidErrKey = schema.addField(self.distortedName + ".err", type="CovPointF",
+                                           doc="centroid distorted err for astrometry solver")
+            self.centroidFlagKey = schema.addField(self.distortedName + ".flag", type="Flag",
+                                           doc="centroid distorted flag astrometry solver")
+        else:
+            self.distortedName = "astrom_distorted"
+            self.centroidXKey = schema.addField(self.distortedName + "_x", type="D",
+                                           doc="centroid distorted for astrometry solver")
+            self.centroidYKey = schema.addField(self.distortedName + "_y", type="D",
+                                           doc="centroid distorted for astrometry solver")
+            self.centroidXErrKey = schema.addField(self.distortedName + "_xSigma", type="F",
+                                           doc="centroid distorted err for astrometry solver")
+            self.centroidYErrKey = schema.addField(self.distortedName + "_ySigma", type="F",
+                                           doc="centroid distorted err for astrometry solver")
+            self.centroidFlagKey = schema.addField(self.distortedName + "_flag", type="Flag",
+                                           doc="centroid distorted flag astrometry solver")
+            self.centroidKey = Point2DKey(self.centroidXKey, self.centroidYKey)
+            self.centroidErrKey = CovarianceMatrix2fKey((self.centroidXErrKey, self.centroidYErrKey))
+ 
+        self.astrometer = None
+>>>>>>> 2af44c8... Change to use functorKeys for compound field slots
 
     @pipeBase.timeMethod
     def run(self, exposure, sources):
@@ -128,12 +157,25 @@ class AstrometryTask(pipeBase.Task):
             self.log.info("Null distortion correction")
             for s in sources:
                 s.set(self.centroidKey, s.getCentroid())
+<<<<<<< HEAD
+=======
+                s.set(self.centroidErrKey, s.getCentroidErr())
+                s.set(self.centroidFlagKey, s.getCentroidFlag())
+>>>>>>> 2af44c8... Change to use functorKeys for compound field slots
             return exposure.getBBox(afwImage.PARENT)
 
         # Distort source positions
         self.log.info("Applying distortion correction: %s" % distorter.prynt())
         for s in sources:
+<<<<<<< HEAD
             s.set(self.centroidKey, distorter.undistort(s.getCentroid(), ccd))
+=======
+            centroid = pixToTanXYTransform.forwardTransform(s.getCentroid())
+            s.set(self.centroidKey, centroid)
+            s.set(self.centroidErrKey, s.getCentroidErr())
+            s.set(self.centroidFlagKey, s.getCentroidFlag())
+
+>>>>>>> 2af44c8... Change to use functorKeys for compound field slots
 
         # Get distorted image size so that astrometry_net does not clip.
         corners = numpy.array([distorter.undistort(afwGeom.Point2D(cnr), ccd) for
@@ -164,15 +206,13 @@ class AstrometryTask(pipeBase.Task):
         """
         # Apply distortion
         bbox = self.distort(exposure, sources)
-        oldCentroidKey = sources.table.getCentroidKey()
-        sources.table.defineCentroid(self.centroidKey, sources.table.getCentroidErrKey(),
-                                     sources.table.getCentroidFlagKey())
+        oldCentroidName = sources.table.getCentroidDefinition()
+        sources.table.defineCentroid(self.distortedName)
         try:
             yield bbox # Execute 'with' block, providing bbox to 'as' variable
         finally:
             # Un-apply distortion
-            sources.table.defineCentroid(oldCentroidKey, sources.table.getCentroidErrKey(),
-                                         sources.table.getCentroidFlagKey())
+            sources.table.defineCentroid(oldCentroidName)
             x0, y0 = exposure.getXY0()
             exposure.getWcs().shiftReferencePixel(-bbox.getMinX() + x0, -bbox.getMinY() + y0)
 
