@@ -103,6 +103,12 @@ class CalibrateConfig(pexConfig.Config):
     )
     astrometry    = pexConfig.ConfigurableField(target = AstrometryTask, doc = "")
     photocal      = pexConfig.ConfigurableField(target = PhotoCalTask, doc="")
+    isOnsiteQa = pexConfig.Field(
+        dtype = bool,
+        doc = "Is this process for onsiteQa, in which some minor failure should not stop the process?",
+        default = False,
+    )
+
 
     def validate(self):
         pexConfig.Config.validate(self)
@@ -266,7 +272,8 @@ class CalibrateTask(pipeBase.Task):
                 self.log.warn("Unable to perform astrometry (%s): attempting to proceed" % e)
 
         if self.config.doPhotoCal:
-            assert(matches is not None)
+            if self.config.isOnsiteQa is not True:
+                assert(matches is not None)
             try:
                 photocalRet = self.photocal.run(exposure, matches)
             except Exception, e:

@@ -153,22 +153,29 @@ class ProcessImageTask(pipeBase.CmdLineTask):
         sources = None
         backgrounds = afwMath.BackgroundList()
         if self.config.doCalibrate:
-            calib = self.calibrate.run(inputExposure, idFactory=idFactory)
-            calExposure = calib.exposure
-            if self.config.doWriteCalibrate:
-                dataRef.put(calib.sources, self.dataPrefix + "icSrc")
-                if calib.matches is not None and self.config.doWriteCalibrateMatches:
-                    normalizedMatches = afwTable.packMatches(calib.matches)
-                    normalizedMatches.table.setMetadata(calib.matchMeta)
-                    dataRef.put(normalizedMatches, self.dataPrefix + "icMatch")
-            try:
-                for bg in calib.backgrounds:
-                    backgrounds.append(bg)
-            except TypeError:     
-                backgrounds.append(calib.backgrounds)
-            except AttributeError:
-                self.log.warn("The calibration task did not return any backgrounds. " +
-                    "Any background subtracted in the calibration process cannot be persisted.")
+            try: # onsiteQA: calib may fail but process should not stop
+                calib = self.calibrate.run(inputExposure, idFactory=idFactory)
+                calExposure = calib.exposure
+                if self.config.doWriteCalibrate:
+                    dataRef.put(calib.sources, self.dataPrefix + "icSrc")
+                    if calib.matches is not None and self.config.doWriteCalibrateMatches:
+                        normalizedMatches = afwTable.packMatches(calib.matches)
+                        normalizedMatches.table.setMetadata(calib.matchMeta)
+                        dataRef.put(normalizedMatches, self.dataPrefix + "icMatch")
+                try:
+                    for bg in calib.backgrounds:
+                        backgrounds.append(bg)
+                except TypeError:     
+                    backgrounds.append(calib.backgrounds)
+                except AttributeError:
+                    self.log.warn("The calibration task did not return any backgrounds. " +
+                                  "Any background subtracted in the calibration process cannot be persisted.")
+            except Exception, e:
+                calib = None
+                if self.calibrate.config.isOnsiteQa:
+                    self.log.warn("calibTask failed, but we proceed for onsiteQa: %s: %s" % (dataRef.dataId), str(e))
+                else:
+                    raise
         else:
             calib = None
 
