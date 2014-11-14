@@ -262,11 +262,15 @@ class CalibrateTask(pipeBase.Task):
 
         matches, matchMeta = None, None
         if self.config.doAstrometry:
+            origWcs = exposure.getWcs()
             try:
                 astromRet = self.astrometry.run(exposure, sources)
                 matches = astromRet.matches
                 matchMeta = astromRet.matchMeta
             except RuntimeError as e:
+                self.log.warn("Error occured in the 2nd path of astrometry (%s): set original Wcs" % e)
+                exposure.setWcs(origWcs) # for onsiteQA
+
                 if self.config.requireAstrometry:
                     raise
                 self.log.warn("Unable to perform astrometry (%s): attempting to proceed" % e)
