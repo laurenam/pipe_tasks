@@ -33,6 +33,8 @@ from .astrometry import AstrometryTask
 from .repair import RepairTask
 from .measurePsf import MeasurePsfTask
 
+from .qaTimeout import TimeoutError # for onsite QA
+
 class InitialPsfConfig(pexConfig.Config):
     """Describes the initial PSF used for detection and measurement before we do PSF determination."""
 
@@ -220,10 +222,10 @@ class CalibrateTask(pipeBase.Task):
                 try:
                     astromRet = self.astrometry.run(exposure, sources)
                     matches = astromRet.matches
-                except RuntimeError as e:
+                except (RuntimeError, TimeoutError) as e:
+                    self.log.warn("Unable to perform astrometry (%s): attempting to proceed" % e)
                     if self.config.requireAstrometry:
                         raise
-                    self.log.warn("Unable to perform astrometry (%s): attempting to proceed" % e)
                 finally:
                     # Restore original Wcs: we're going to repeat the astrometry later, and if it succeeded
                     # this time, running it again with the same basic setup means it should succeed again.
@@ -262,12 +264,12 @@ class CalibrateTask(pipeBase.Task):
 
         matches, matchMeta = None, None
         if self.config.doAstrometry:
-            origWcs = exposure.getWcs()
+            origWcs = exposure.getWcs() # for onsite Qa
             try:
                 astromRet = self.astrometry.run(exposure, sources)
                 matches = astromRet.matches
                 matchMeta = astromRet.matchMeta
-            except RuntimeError as e:
+            except (RuntimeError, TimeoutError) as e:
                 self.log.warn("Error occured in the 2nd path of astrometry (%s): set original Wcs" % e)
                 exposure.setWcs(origWcs) # for onsiteQA
 

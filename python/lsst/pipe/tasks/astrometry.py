@@ -33,6 +33,8 @@ from lsst.meas.astrom.astrom import Astrometry
 from lsst.meas.astrom.sip import makeCreateWcsWithSip
 from .detectorUtil import getCcd
 
+from .qaTimeout import qaTimeout # timeout decorator for onsiteQa
+
 class AstrometryConfig(pexConfig.Config):
     solver = pexConfig.ConfigField(
         dtype = Astrometry.ConfigClass,
@@ -62,6 +64,7 @@ class AstrometryTask(pipeBase.Task):
                                            doc="centroid distorted for astrometry solver")
         self.astrometer = None
 
+    @qaTimeout(60)
     @pipeBase.timeMethod
     def run(self, exposure, sources):
         """Match with reference sources and calculate an astrometric solution
