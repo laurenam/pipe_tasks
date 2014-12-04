@@ -67,8 +67,10 @@ class DetectCoaddSourcesTask(CmdLineTask):
         return parser
 
     def __init__(self, **kwargs):
-        CmdLineTask.__init__(self, **kwargs)
-        self.schema = afwTable.SourceTable.makeMinimalSchema()
+        CmdLineTask.__init__(self, schema=None, **kwargs)
+        if schema is None:
+            schema = afwTable.SourceTable.makeMinimalSchema()
+        self.schema = schema
         self.algMetadata = PropertyList()
         self.makeSubtask("detection", schema=self.schema)
 
@@ -219,12 +221,13 @@ class MergeSourcesTask(CmdLineTask):
                                help="data ID, e.g. --id tract=12345 patch=1,2 filter=g^r^i")
         return parser
 
-    def __init__(self, butler, **kwargs):
+    def __init__(self, butler, schema=None, **kwargs):
         CmdLineTask.__init__(self, **kwargs)
-        inSchema = butler.get(self.config.coaddName + "Coadd_" + self.inputDataset + "_schema",
-                              immediate=True).schema
-        self.schemaMapper = afwTable.SchemaMapper(inSchema)
-        self.schemaMapper.addMinimalSchema(inSchema)
+        if schema is None:
+            schema = butler.get(self.config.coaddName + "Coadd_" + self.inputDataset + "_schema",
+                                immediate=True).schema
+        self.schemaMapper = afwTable.SchemaMapper(schema)
+        self.schemaMapper.addMinimalSchema(schema)
         self.schema = self.schemaMapper.getOutputSchema()
         self.algMetadata = PropertyList()
         self.refKey = self.schema.addField(self.refColumn, type=str,
@@ -313,8 +316,8 @@ class MergeDetectionsTask(MergeSourcesTask):
 
     def __init__(self, butler, **kwargs):
         MergeSourcesTask.__init__(self, butler, **kwargs)
-        self.schemaMerge = afwTable.SourceTable.makeMinimalSchema()
-        self.merged = afwDetect.FootprintMergeList(self.schemaMerge, self.config.priorityList)
+        self.schema = afwTable.SourceTable.makeMinimalSchema()
+        self.merged = afwDetect.FootprintMergeList(self.schema, self.config.priorityList)
 
     def makeIdFactory(self, dataRef):
         """Return an IdFactory for setting the detection identifiers
@@ -340,7 +343,7 @@ class MergeDetectionsTask(MergeSourcesTask):
         orderedBands = [band for band in self.config.priorityList if band in catalogs.keys()]
 
         mergedList = self.merged.getMergedSourceCatalog(orderedCatalogs, orderedBands, peakDistance,
-                                                        self.schemaMerge, self.makeIdFactory(patchRef))
+                                                        self.schema, self.makeIdFactory(patchRef))
         self.log.info("Merged to %d sources" % len(mergedList))
         return mergedList
 
@@ -373,11 +376,12 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
                                ContainerClass=ExistingCoaddDataIdContainer)
         return parser
 
-    def __init__(self, butler, **kwargs):
+    def __init__(self, butler, schema=None, **kwargs):
         CmdLineTask.__init__(self, **kwargs)
-        detSchema = butler.get(self.config.coaddName + "Coadd_mergeDet_schema", immediate=True).schema
-        self.schemaMapper = afwTable.SchemaMapper(detSchema)
-        self.schemaMapper.addMinimalSchema(detSchema)
+        if schema is None:
+            schema = butler.get(self.config.coaddName + "Coadd_mergeDet_schema", immediate=True).schema
+        self.schemaMapper = afwTable.SchemaMapper(schema)
+        self.schemaMapper.addMinimalSchema(schema)
         self.schema = self.schemaMapper.getOutputSchema()
         self.algMetadata = PropertyList()
         if self.config.doDeblend:

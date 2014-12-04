@@ -55,6 +55,9 @@ class BaseReferencesTask(Task):
 
     ConfigClass = BaseReferencesConfig
 
+    def __init__(self, butler=None, schema=None, **kwargs):
+        Task.__init__(self, **kwargs)
+
     def getSchema(self, butler):
         """Return the schema for the reference sources.
 
@@ -141,10 +144,13 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
     """
 
     ConfigClass = CoaddSrcReferencesConfig
+    datasetSuffix = "src" # Suffix to add to "Coadd_" for dataset name
 
-    def getSchema(self, butler):
-        """Return the schema of the reference catalog"""
-        return butler.get(self.config.coaddName + "Coadd_src_schema", immediate=True).getSchema()
+    def __init__(self, butler=None, schema=None):
+        if schema is None:
+            assert butler is not None, "No butler nor schema provided"
+            schema = butler.get(self.config.coaddName + "Coadd_ref_schema", immediate=True).getSchema()
+        self.schema = schema
 
     def getWcs(self, dataRef):
         """Return the WCS for reference sources.  The given dataRef must include the tract in its dataId.
@@ -158,9 +164,9 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
 
         The given dataRef must include the tract in its dataId.
         """
-        dataset = self.config.coaddName + "Coadd_src"
+        dataset = self.config.coaddName + "Coadd_" + self.datasetSuffix
         tract = dataRef.dataId["tract"]
-        butler = dataRef.butlerSubset.butler
+        butler = dataRef.getButler()
         for patch in patchList:
             dataId = {'tract': tract, 'patch': "%d,%d" % patch.getIndex()}
             if self.config.filter is not None:
