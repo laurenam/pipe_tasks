@@ -66,8 +66,8 @@ class DetectCoaddSourcesTask(CmdLineTask):
                                ContainerClass=ExistingCoaddDataIdContainer)
         return parser
 
-    def __init__(self, **kwargs):
-        CmdLineTask.__init__(self, schema=None, **kwargs)
+    def __init__(self, schema=None, **kwargs):
+        CmdLineTask.__init__(self, **kwargs)
         if schema is None:
             schema = afwTable.SourceTable.makeMinimalSchema()
         self.schema = schema
