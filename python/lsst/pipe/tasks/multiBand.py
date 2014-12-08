@@ -35,6 +35,15 @@ def _makeGetSchemaCatalogs(datasetSuffix):
     return getSchemaCatalogs
 
 
+def copySlots(oldCat, newCat):
+    """Copy table slots definitions from one catalog to another"""
+    for name in ("Centroid", "Shape", "ApFlux", "ModelFlux", "PsfFlux", "InstFlux"):
+        meas = getattr(oldCat.table, "get" + name + "Key")()
+        err = getattr(oldCat.table, "get" + name + "ErrKey")()
+        flag = getattr(oldCat.table, "get" + name + "FlagKey")()
+        getattr(newCat.table, "define" + name)(meas, err, flag)
+
+
 ##############################################################################################################
 
 class DetectCoaddSourcesConfig(Config):
@@ -221,9 +230,10 @@ class MergeSourcesTask(CmdLineTask):
                                help="data ID, e.g. --id tract=12345 patch=1,2 filter=g^r^i")
         return parser
 
-    def __init__(self, butler, schema=None, **kwargs):
+    def __init__(self, butler=None, schema=None, **kwargs):
         CmdLineTask.__init__(self, **kwargs)
         if schema is None:
+            assert butler is not None, "Neither butler nor schema specified"
             schema = butler.get(self.config.coaddName + "Coadd_" + self.inputDataset + "_schema",
                                 immediate=True).schema
         self.schemaMapper = afwTable.SchemaMapper(schema)
@@ -283,6 +293,9 @@ class MergeSourcesTask(CmdLineTask):
         # Can't set a string column; do it row by row
         for s in catalogs[best]:
             s[self.refKey] = best
+
+        copySlots(catalogs[best], merged)
+
         self.log.info("Merged to %d sources" % len(merged))
         return merged
 
@@ -299,6 +312,9 @@ class MergeSourcesTask(CmdLineTask):
         """No metadata to write, and not sure how to write it for a list of dataRefs"""
         pass
 
+    def writeEupsVersions(self, butler, clobber=False):
+        # XXX don't care while debugging
+        pass
 
 class MergeDetectionsConfig(MergeSourcesConfig):
     minNewPeak = Field(dtype=float, default=1,
@@ -314,8 +330,8 @@ class MergeDetectionsTask(MergeSourcesTask):
     refColumn = "detection.ref"
     getSchemaCatalogs = _makeGetSchemaCatalogs("mergeDet")
 
-    def __init__(self, butler, **kwargs):
-        MergeSourcesTask.__init__(self, butler, **kwargs)
+    def __init__(self, **kwargs):
+        MergeSourcesTask.__init__(self, **kwargs)
         self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.merged = afwDetect.FootprintMergeList(self.schema, self.config.priorityList)
 
@@ -344,6 +360,7 @@ class MergeDetectionsTask(MergeSourcesTask):
 
         mergedList = self.merged.getMergedSourceCatalog(orderedCatalogs, orderedBands, peakDistance,
                                                         self.schema, self.makeIdFactory(patchRef))
+        copySlots(orderedCatalogs[0], mergedList)
         self.log.info("Merged to %d sources" % len(mergedList))
         return mergedList
 
@@ -376,9 +393,10 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
                                ContainerClass=ExistingCoaddDataIdContainer)
         return parser
 
-    def __init__(self, butler, schema=None, **kwargs):
+    def __init__(self, butler=None, schema=None, **kwargs):
         CmdLineTask.__init__(self, **kwargs)
         if schema is None:
+            assert butler is not None, "Neither butler nor schema is defined"
             schema = butler.get(self.config.coaddName + "Coadd_mergeDet_schema", immediate=True).schema
         self.schemaMapper = afwTable.SchemaMapper(schema)
         self.schemaMapper.addMinimalSchema(schema)
@@ -487,9 +505,10 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
         sources: source catalog
         """
         result = self.astrometry.astrometer.useKnownWcs(sources, exposure=exposure)
-        matches = afwTable.packMatches(result.matches)
-        matches.table.setMetadata(result.matchMetadata)
-        dataRef.put(matches, self.config.coaddName + "Coadd_srcMatch")
+        if result.matches:
+            matches = afwTable.packMatches(result.matches)
+            matches.table.setMetadata(result.matchMetadata)
+            dataRef.put(matches, self.config.coaddName + "Coadd_srcMatch")
 
     def write(self, dataRef, sources):
         """Write the source catalog"""

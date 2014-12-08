@@ -146,11 +146,12 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
     ConfigClass = CoaddSrcReferencesConfig
     datasetSuffix = "src" # Suffix to add to "Coadd_" for dataset name
 
-    def __init__(self, butler=None, schema=None):
+    def __init__(self, butler=None, schema=None, **kwargs):
         if schema is None:
             assert butler is not None, "No butler nor schema provided"
             schema = butler.get(self.config.coaddName + "Coadd_ref_schema", immediate=True).getSchema()
         self.schema = schema
+        BaseReferencesTask.__init__(self, butler=butler, schema=schema, **kwargs)
 
     def getWcs(self, dataRef):
         """Return the WCS for reference sources.  The given dataRef must include the tract in its dataId.
