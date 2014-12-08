@@ -35,7 +35,7 @@ class BaseReferencesConfig(Config):
         default = True
     )
     filter = Field(
-        doc = "Bandpass for reference sources; None indicates chi-squared detections.",
+        doc = "Bandpass for reference sources; may be None to indicate a multi-band catalog",
         dtype = str,
         optional = True
     )
@@ -126,13 +126,25 @@ class CoaddSrcReferencesConfig(BaseReferencesTask.ConfigClass):
         dtype = str,
         default = "deep",
     )
+    datasetName = Field(
+        doc = ("Name of the butler dataset to use for references (without coaddName prefix), usually one of "
+               "'src' or 'ref', for 'deepCoadd_src' or 'deepCoadd_ref', respectively."),
+        dtype = str,
+        default = "src",
+    )
 
     def validate(self):
-        if (self.coaddName == "chiSquared") != (self.filter is None):
+        if self.datasetName == "src" and ((self.coaddName == "chiSquared") != (self.filter is None)):
             raise FieldValidationError(
                 field=CoaddSrcReferencesConfig.coaddName,
                 config=self,
-                msg="filter may be None if and only if coaddName is chiSquared"
+                msg="if datasetName is src, filter may be None if and only if coaddName is chiSquared"
+                )
+       elif self.datasetName == "ref" and self.filter is not None:
+            raise FieldValidationError(
+                field=CoaddSrcReferencesConfig.coaddName,
+                config=self,
+                msg="filter must be None if datasetName is ref"
                 )
 
 class CoaddSrcReferencesTask(BaseReferencesTask):
@@ -144,7 +156,8 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
 
     def getSchema(self, butler):
         """Return the schema of the reference catalog"""
-        return butler.get(self.config.coaddName + "Coadd_src_schema", immediate=True).getSchema()
+        return butler.get("%sCoadd_%s_schema" % (self.config.coaddName, self.config.datasetName),
+                          immediate=True).getSchema()
 
     def getWcs(self, dataRef):
         """Return the WCS for reference sources.  The given dataRef must include the tract in its dataId.
@@ -153,12 +166,12 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
         return skyMap[dataRef.dataId["tract"]].getWcs()
 
     def fetchInPatches(self, dataRef, patchList):
-        """An implementation of BaseReferencesTask.fetchInPatches that loads 'coadd_src' catalogs
+        """An implementation of BaseReferencesTask.fetchInPatches that loads catalogs
         using the butler.
 
         The given dataRef must include the tract in its dataId.
         """
-        dataset = self.config.coaddName + "Coadd_src"
+        dataset = "%sCoadd_%s" % (self.config.coaddName, self.config.datasetName)
         tract = dataRef.dataId["tract"]
         butler = dataRef.butlerSubset.butler
         for patch in patchList:
