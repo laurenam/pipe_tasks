@@ -26,7 +26,6 @@ import lsst.pipe.base
 from lsst.pex.config import Config, Field
 from .coaddBase import ExistingCoaddDataIdContainer
 from .forcedPhotImage import ForcedPhotImageTask
-from .propagateFlags import PropagateFlagsTask
 
 __all__ = ("ForcedPhotCoaddTask",)
 
@@ -44,7 +43,6 @@ class ForcedPhotCoaddConfig(ForcedPhotImageTask.ConfigClass):
         default = "meas",
         optional=True
     )
-    propagateFlags = ConfigurableField(target=PropagateFlagsTask, doc="Propagate flags from reference")
 
     def setDefaults(self):
         ForcedPhotImageTask.ConfigClass.setDefaults(self)
@@ -70,13 +68,6 @@ class ForcedPhotCoaddTask(ForcedPhotImageTask):
     def __init__(self, **kwargs):
         ForcedPhotImageTask.__init__(self, **kwargs)
         self.dataPrefix = self.config.coaddName + "Coadd_"
-        self.makeSubtask("propagateFlags", schema=self.schema)
-
-    def run(self, dataRef):
-        results = ForcedPhotImageTask.run(self, dataRef)
-        self.propagateFlags.run(dataRef.getButler(), results.sources,
-                                self.propagateFlags.getCcdInputs(results.exposure))
-        return results
 
     def getExposure(self, dataRef):
         name = self.config.coaddName + "Coadd"

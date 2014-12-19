@@ -203,7 +203,7 @@ class ForcedPhotImageTask(CmdLineTask):
             self.attachFootprints(dataRef, sources, references=references, exposure=exposure, refWcs=refWcs)
             self.measurement.run(exposure, sources, references=references, refWcs=refWcs)
             self.writeOutput(dataRef, sources)
-            return Struct(sources=sources, exposure=exposure)
+            return Struct(sources=sources)
         else:
             self.log.info("No image exists for %s" % (dataRef.dataId))
-            return Struct(sources=None, exposure=None)
+            return Struct(sources=None)
