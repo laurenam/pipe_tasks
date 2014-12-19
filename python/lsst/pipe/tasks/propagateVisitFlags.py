@@ -31,7 +31,7 @@ import lsst.afw.table as afwTable
 class PropagateVisitFlagsConfig(Config):
     """Configuration for propagating flags to coadd"""
     flags = DictField(keytype=str, itemtype=float,
-                      default={"calib.psf.used": 0.5, "calib.psf.candidate": 0.5,},
+                      default={"calib.psf.used": 0.2, "calib.psf.candidate": 0.2,},
                       doc="Source catalog flags to propagate, with the threshold of relative occurrence.")
     matchRadius = Field(dtype=float, default=0.2, doc="Source matching radius (arcsec)")
 
@@ -63,12 +63,14 @@ class PropagateVisitFlagsTask(Task):
         0.  But neither of these extrema are really useful in practise.
 
         Setting the threshold too high means that sources that are not consistently
-        flagged (e.g., due to chip gaps and being off the edge of the field of view)
-        will not have the flag propagated.  Setting that threshold too low means that
-        random sources which are falsely flagged in the inputs will start to dominate.
-        If in doubt, we suggest making this threshold relatively low, but not zero
-        (e.g., 0.1 to 0.2 or so).  The more confidence in the quality of the flagging,
-        the lower the threshold can be.
+        flagged (e.g., due to chip gaps) will not have the flag propagated.  Setting
+        that threshold too low means that random sources which are falsely flagged in
+        the inputs will start to dominate.  If in doubt, we suggest making this threshold
+        relatively low, but not zero (e.g., 0.1 to 0.2 or so).  The more confidence in
+        the quality of the flagging, the lower the threshold can be.
+
+        The relative occurrence accounts for the edge of the field-of-view of
+        the camera, but does not include chip gaps, bad or saturated pixels, etc.
 
         @param[in] butler  Data butler, for retrieving the input source catalogs
         @param[in,out] coaddSources  Source catalog from the coadd
@@ -105,6 +107,6 @@ class PropagateVisitFlagsTask(Task):
         for f in flags:
             key = self._keys[f]
             for s, num in zip(coaddSources, counts[f]):
-                threshold = visits.subsetContaining(s.getCentroid(), coaddWcs, True)*self.config.flags[f]
-                s.setFlag(key, num > threshold)
+                numOverlaps = len(ccdInputs.subsetContaining(s.getCentroid(), coaddWcs, True))
+                s.setFlag(key, num > numOverlaps*self.config.flags[f])
             self.log.info("Propagated %d sources with flag %s" % (sum(s.get(key) for s in coaddSources), f))
