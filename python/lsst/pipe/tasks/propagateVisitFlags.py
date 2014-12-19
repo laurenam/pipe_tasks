@@ -28,7 +28,7 @@ import lsst.afw.geom as afwGeom
 import lsst.afw.table as afwTable
 
 
-class PropagateFlagsConfig(Config):
+class PropagateVisitFlagsConfig(Config):
     """Configuration for propagating flags to coadd"""
     flags = DictField(keytype=str, itemtype=float,
                       default={"calib.psf.used": 0.2, "calib.psf.candidate": 0.2,},
@@ -36,23 +36,23 @@ class PropagateFlagsConfig(Config):
     matchRadius = Field(dtype=float, default=0.2, doc="Source matching radius (arcsec)")
 
 
-class PropagateFlagsTask(Task):
+class PropagateVisitFlagsTask(Task):
     """Task to propagate flags from single-frame measurements to coadd measurements"""
-    ConfigClass = PropagateFlagsConfig
+    ConfigClass = PropagateVisitFlagsConfig
 
     def __init__(self, schema, **kwargs):
         Task.__init__(self, **kwargs)
         self.schema = schema
-        self._keys = dict((f, self.schema.addField(f, type="Flag", doc="Propagated from src")) for
-                         f in self.config.flags)
+        self._keys = dict((f, self.schema.addField(f, type="Flag", doc="Propagated from visits")) for
+                          f in self.config.flags)
 
     @staticmethod
     def getCcdInputs(coaddExposure):
         """Convenience method to retrieve the CCD inputs table from a coadd exposure"""
         return coaddExposure.getInfo().getCoaddInputs().ccds
 
-    def run(self, butler, coaddSources, ccdInputs):
-        """Propagate flags from single-frame measurement to coadd
+    def run(self, butler, coaddSources, ccdInputs, coaddWcs):
+        """Propagate flags from individual visit measurements to coadd
 
         This requires matching the coadd source catalog to each of the catalogs
         from the inputs, and thresholding on the number of times a source is
@@ -73,6 +73,7 @@ class PropagateFlagsTask(Task):
         @param[in] butler  Data butler, for retrieving the input source catalogs
         @param[in,out] coaddSources  Source catalog from the coadd
         @param[in] ccdInputs  Table of CCDs that contribute to the coadd
+        @param[in] coaddWcs  Wcs for coadd
         """
         if len(self.config.flags) == 0:
             return
@@ -101,10 +102,9 @@ class PropagateFlagsTask(Task):
                     counts[flag][index] += 1
 
         # Apply threshold
-        numVisits = len(set(visits))
         for f in flags:
-            threshold = numVisits*self.config.flags[f]
             key = self._keys[f]
             for s, num in zip(coaddSources, counts[f]):
+                threshold = visits.subsetContaining(s.getCentroid(), coaddWcs, True)*self.config.flags[f]
                 s.setFlag(key, num > threshold)
             self.log.info("Propagated %d sources with flag %s" % (sum(s.get(key) for s in coaddSources), f))

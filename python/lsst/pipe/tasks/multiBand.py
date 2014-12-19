@@ -4,7 +4,7 @@ from lsst.meas.algorithms import SourceDetectionTask, SourceMeasurementTask
 from lsst.meas.deblender import SourceDeblendTask
 from lsst.pipe.tasks.coaddBase import getSkyInfo, ExistingCoaddDataIdContainer
 from lsst.pipe.tasks.astrometry import AstrometryTask
-from lsst.pipe.tasks.propagateFlags import PropagateFlagsTask
+from lsst.pipe.tasks.propagateVisitFlags import PropagateVisitFlagsTask
 import lsst.afw.table as afwTable
 import lsst.afw.math as afwMath
 import lsst.afw.geom as afwGeom
@@ -69,7 +69,6 @@ def copySlots(oldCat, newCat):
 class DetectCoaddSourcesConfig(Config):
     doScaleVariance = Field(dtype=bool, default=True, doc="Scale variance plane using empirical noise?")
     detection = ConfigurableField(target=SourceDetectionTask, doc="Source detection")
-    propagateFlags = ConfigurableField(target=PropagateFlagsTask, doc="Propagate flags to coadd")
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
 
     def setDefaults(self):
@@ -110,7 +109,6 @@ class DetectCoaddSourcesTask(CmdLineTask):
         self.schema = schema
         self.algMetadata = PropertyList()
         self.makeSubtask("detection", schema=self.schema)
-        self.makeSubtask("propagateFlags", schema=self.schema)
 
     def run(self, patchRef):
         """Run detection on a coadd"""
@@ -118,8 +116,6 @@ class DetectCoaddSourcesTask(CmdLineTask):
         if self.config.doScaleVariance:
             self.scaleVariance(exposure.getMaskedImage())
         results = self.runDetection(exposure, self.makeIdFactory(patchRef))
-        self.propagateFlags.run(patchRef.getButler(), results.sources,
-                                self.propagateFlags.getCcdInputs(exposure))
         self.write(results, patchRef)
 
     def scaleVariance(self, maskedImage):
@@ -398,7 +394,7 @@ class MeasureMergedCoaddSourcesConfig(Config):
     doDeblend = Field(dtype=bool, default=True, doc="Deblend sources?")
     deblend = ConfigurableField(target=SourceDeblendTask, doc="Deblend sources")
     measurement = ConfigurableField(target=SourceMeasurementTask, doc="Source measurement")
-    propagateFlags = ConfigurableField(target=PropagateFlagsTask, doc="Propagate flags to coadd")
+    propagateFlags = ConfigurableField(target=PropagateVisitFlagsTask, doc="Propagate visit flags to coadd")
     doMatchSources = Field(dtype=bool, default=True, doc="Match sources to reference catalog?")
     astrometry = ConfigurableField(target=AstrometryTask, doc="Astrometric matching")
     coaddName = Field(dtype=str, default="deep", doc="Name of coadd")
@@ -474,7 +470,8 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
             self.deblend.run(exposure, sources, exposure.getPsf())
         self.measurement.run(exposure, sources)
         self.setIsPrimaryFlag(sources, patchRef)
-        self.propagateFlags.run(patchRef.getButler(), sources, self.propagateFlags.getCcdInputs(exposure))
+        self.propagateFlags.run(patchRef.getButler(), sources, self.propagateFlags.getCcdInputs(exposure),
+                                exposure.getWcs())
         if self.config.doMatchSources:
             self.writeMatches(patchRef, exposure, sources)
         self.write(patchRef, sources)
