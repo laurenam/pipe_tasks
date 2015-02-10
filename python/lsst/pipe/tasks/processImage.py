@@ -138,6 +138,23 @@ class ProcessImageTask(pipeBase.CmdLineTask):
             if fpSets.background:           
                 backgrounds.append(fpSets.background)
 
+        if False:
+            import lsst.afw.detection as afwDet
+            import lsst.afw.ellipses as afwEll
+            newFpSet = afwDet.FootprintSet(fpSets.positive.getRegion())
+            for fp in fpSets.positive:
+                if fp.getArea() > 10000:
+                    continue
+                bbox = fp.getBBox()
+                if bbox.getWidth() > 300 or bbox.getHeight() > 300:
+                    continue
+                axes = afwEll.Axes(fp.getShape())
+                if axes.getA() > 300 or axes.getB()/axes.getA() < 1.0e-3:
+                    continue
+                newFpSet.push_back(fp)
+            fpSets.positive = newFpSet
+            self.log.warn("NEW NUMBER OF DETECTIONS: %d" % len(fpSets.positive))
+
         if self.config.doDeblend:
             self.deblend.run(inputExposure, sources, inputExposure.getPsf())
 
