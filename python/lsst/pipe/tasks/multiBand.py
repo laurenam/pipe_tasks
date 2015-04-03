@@ -106,6 +106,7 @@ class DetectCoaddSourcesTask(CmdLineTask):
     ConfigClass = DetectCoaddSourcesConfig
     getSchemaCatalogs = _makeGetSchemaCatalogs("det")
     makeIdFactory = _makeMakeIdFactory("CoaddId")
+    RunnerClass = ButlerInitializedTaskRunner
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -114,17 +115,25 @@ class DetectCoaddSourcesTask(CmdLineTask):
                                ContainerClass=ExistingCoaddDataIdContainer)
         return parser
 
-    def __init__(self, schema=None, **kwargs):
+    def getInputSchema(self, butler=None, schema=None):
+        if schema is not None:
+            return schema
+        if butler is not None:
+            schema = butler.get(self.config.coaddName + "Coadd_det_schema", immediate=True).schema
+            return schema
+        return afwTable.SourceTable.makeMinimalSchema()
+
+    def __init__(self, butler=None, schema=None, **kwargs):
         """Initialize the task.
 
         Keyword arguments (in addition to those forwarded to CmdLineTask.__init__):
          - schema: the initial schema for the output catalog, modified-in place to include all
-                   fields set by this task.  If None, the source minimal schema will be used.
+                   fields set by this task.
+         - butler: the data butler, to retrieve a schema.
+        If both are None, the source minimal schema will be used.
         """
         CmdLineTask.__init__(self, **kwargs)
-        if schema is None:
-            schema = afwTable.SourceTable.makeMinimalSchema()
-        self.schema = schema
+        self.schema = self.getInputSchema(butler, schema)
         self.makeSubtask("detection", schema=self.schema)
 
     def run(self, patchRef):
