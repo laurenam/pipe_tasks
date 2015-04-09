@@ -81,6 +81,21 @@ def getShortFilterName(name):
     # and its the only way I could get it to work.
     return afwImage.Filter(name).getFilterProperty().getName()
 
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
+def makeButlerInitializedReducer():
+    """Create a __reduce__ function suitable for butler-initialized Tasks"""
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
+    return __reduce__
 
 ##############################################################################################################
 
@@ -107,6 +122,7 @@ class DetectCoaddSourcesTask(CmdLineTask):
     getSchemaCatalogs = _makeGetSchemaCatalogs("det")
     makeIdFactory = _makeMakeIdFactory("CoaddId")
     RunnerClass = ButlerInitializedTaskRunner
+    __reduce__ = makeButlerInitializedReducer()
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -115,25 +131,10 @@ class DetectCoaddSourcesTask(CmdLineTask):
                                ContainerClass=ExistingCoaddDataIdContainer)
         return parser
 
-    def getInputSchema(self, butler=None, schema=None):
-        if schema is not None:
-            return schema
-        if butler is not None:
-            schema = butler.get(self.config.coaddName + "Coadd_det_schema", immediate=True).schema
-            return schema
-        return afwTable.SourceTable.makeMinimalSchema()
-
-    def __init__(self, butler=None, schema=None, **kwargs):
-        """Initialize the task.
-
-        Keyword arguments (in addition to those forwarded to CmdLineTask.__init__):
-         - schema: the initial schema for the output catalog, modified-in place to include all
-                   fields set by this task.
-         - butler: the data butler, to retrieve a schema.
-        If both are None, the source minimal schema will be used.
-        """
+    def __init__(self, **kwargs):
+        """Initialize the task."""
         CmdLineTask.__init__(self, **kwargs)
-        self.schema = self.getInputSchema(butler, schema)
+        self.schema = afwTable.SourceTable.makeMinimalSchema()
         self.makeSubtask("detection", schema=self.schema)
 
     def run(self, patchRef):
@@ -258,6 +259,7 @@ class MergeSourcesTask(CmdLineTask):
     outputDataset = None
     refColumn = None
     getSchemaCatalogs = None
+    __reduce__ = makeButlerInitializedReducer()
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -352,6 +354,7 @@ class MergeDetectionsTask(MergeSourcesTask):
     outputDataset = "mergeDet"
     refColumn = "detection.ref"
     makeIdFactory = _makeMakeIdFactory("MergedCoaddId")
+    __reduce__ = makeButlerInitializedReducer()
 
     def __init__(self, butler=None, schema=None, **kwargs):
         """Initialize the task.
@@ -424,6 +427,7 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
     RunnerClass = ButlerInitializedTaskRunner
     getSchemaCatalogs = _makeGetSchemaCatalogs("meas")
     makeIdFactory = _makeMakeIdFactory("MergedCoaddId") # The IDs we already have are of this type
+    __reduce__ = makeButlerInitializedReducer()
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -524,6 +528,7 @@ class MergeMeasurementsTask(MergeSourcesTask):
     outputDataset = "ref"
     refColumn = "measurement.ref"
     getSchemaCatalogs = _makeGetSchemaCatalogs("ref")
+    __reduce__ = makeButlerInitializedReducer()
 
     def __init__(self, butler=None, schema=None, **kwargs):
         """Initialize the task.
@@ -580,7 +585,14 @@ class MergeMeasurementsTask(MergeSourcesTask):
                 bestChild = (inputRecord.getParent() != 0 and inputRecord.get(flagKeys.peak))
                 if bestParent or bestChild:
                     outputRecord = mergedCatalog.addNew()
-                    outputRecord.assign(inputRecord, self.schemaMapper)
+                    try:
+                        outputRecord.assign(inputRecord, self.schemaMapper)
+                    except:
+                        self.log.warn("Schema problem with ref %s" % (patchRef.dataId,))
+                        print "Input record schema:", inputRecord.schema
+                        print "Schema mapper input schema:", self.schemaMapper.getInputSchema()
+                        print "Schema mapper output schema:", self.schemaMapper.getOutputSchema()
+                        raise
                     outputRecord.set(flagKeys.output, True)
                     break
             else: # if we didn't break (i.e. didn't find any record with right flag set)
