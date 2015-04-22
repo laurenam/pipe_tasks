@@ -28,6 +28,8 @@ the mergeDet, meas, and ref dataset Footprints:
 * deepCoadd_peak_schema
 """
 
+afwImage.MaskU.addMaskPlane("CLIPPED")
+
 
 def _makeGetSchemaCatalogs(datasetSuffix):
     """Construct a getSchemaCatalogs instance method
@@ -96,6 +98,21 @@ def makeButlerInitializedReducer():
         return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
                                                                 parentTask=self._parentTask, log=None))
     return __reduce__
+
+
+def getInputSchema(schemaName, butler=None, schema=None):
+    """Determine an input schema
+
+    The schema is pulled from the butler if possible, and compared with the
+    one provided.
+    """
+    if butler is not None and butler.datasetExists(schemaName):
+        butlerSchema = butler.get(schemaName, immediate=True).schema
+        if schema is not None and butlerSchema != schema:
+            raise RuntimeError("Mismatch between provided schema and schema from butler for %s" % schemaName)
+        return butlerSchema
+    assert schema is not None, "No butler or schema provided"
+    return schema
 
 ##############################################################################################################
 
@@ -275,12 +292,6 @@ class MergeSourcesTask(CmdLineTask):
                                help="data ID, e.g. --id tract=12345 patch=1,2 filter=g^r^i")
         return parser
 
-    def getInputSchema(self, butler=None, schema=None):
-        if schema is None:
-            assert butler is not None, "Neither butler nor schema specified"
-            schema = butler.get(self.config.coaddName + "Coadd_" + self.inputDataset + "_schema",
-                                immediate=True).schema
-        return schema
 
     def __init__(self, butler=None, schema=None, **kwargs):
         """Initialize the task.
@@ -366,7 +377,8 @@ class MergeDetectionsTask(MergeSourcesTask):
         The task will set its own self.schema attribute to the schema of the output merged catalog.
         """
         MergeSourcesTask.__init__(self, butler=butler, schema=schema, **kwargs)
-        self.schema = self.getInputSchema(butler=butler, schema=schema)
+        schemaName = self.config.coaddName + "Coadd_" + self.inputDataset + "_schema"
+        self.schema = getInputSchema(schemaName, butler=butler, schema=schema)
         self.merged = afwDetect.FootprintMergeList(
             self.schema,
             [getShortFilterName(name) for name in self.config.priorityList]
@@ -449,9 +461,7 @@ class MeasureMergedCoaddSourcesTask(CmdLineTask):
         measurements.
         """
         CmdLineTask.__init__(self, **kwargs)
-        if schema is None:
-            assert butler is not None, "Neither butler nor schema is defined"
-            schema = butler.get(self.config.coaddName + "Coadd_mergeDet_schema", immediate=True).schema
+        schema = getInputSchema(self.config.coaddName + "Coadd_mergeDet_schema", butler=butler, schema=schema)
         self.schemaMapper = afwTable.SchemaMapper(schema)
         self.schemaMapper.addMinimalSchema(schema)
         self.schema = self.schemaMapper.getOutputSchema()
@@ -540,7 +550,8 @@ class MergeMeasurementsTask(MergeSourcesTask):
         The task will set its own self.schema attribute to the schema of the output merged catalog.
         """
         MergeSourcesTask.__init__(self, butler=butler, schema=schema, **kwargs)
-        inputSchema = self.getInputSchema(butler=butler, schema=schema)
+        schemaName = self.config.coaddName + "Coadd_" + self.inputDataset + "_schema"
+        inputSchema = getInputSchema(schemaName, butler=butler, schema=schema)
         self.schemaMapper = afwTable.SchemaMapper(inputSchema)
         self.schemaMapper.addMinimalSchema(inputSchema, True)
         self.flagKeys = {}

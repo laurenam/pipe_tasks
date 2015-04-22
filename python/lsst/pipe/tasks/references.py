@@ -145,6 +145,29 @@ class CoaddSrcReferencesConfig(BaseReferencesTask.ConfigClass):
                 msg="filter may be None if and only if coaddName is chiSquared"
                 )
 
+def getInputSchema(schemaName, butler=None, schema=None):
+    """Determine an input schema
+
+    The schema is pulled from the butler if possible, and compared with the
+    one provided.
+    """
+    if butler is not None and butler.datasetExists(schemaName):
+        butlerSchema = butler.get(schemaName, immediate=True).schema
+        if schema is not None and butlerSchema != schema:
+            raise RuntimeError("Mismatch between provided schema and schema from butler for %s" % schemaName)
+        return butlerSchema
+    assert schema is not None, "No butler or schema provided"
+    return schema
+
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
+
 class CoaddSrcReferencesTask(BaseReferencesTask):
     """A references task implementation that loads the coadd_src dataset directly from disk using
     the butler.
@@ -155,10 +178,14 @@ class CoaddSrcReferencesTask(BaseReferencesTask):
 
     def __init__(self, butler=None, schema=None, **kwargs):
         BaseReferencesTask.__init__(self, butler=butler, schema=schema, **kwargs)
-        if schema is None:
-            assert butler is not None, "No butler nor schema provided"
-            schema = butler.get(self.config.coaddName + "Coadd_ref_schema", immediate=True).getSchema()
-        self.schema = schema
+        schemaName = self.config.coaddName + "Coadd_" + self.datasetSuffix + "_schema"
+        self.butler = butler
+        self.schema = getInputSchema(schemaName, butler=butler, schema=schema)
+
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
 
     def getWcs(self, dataRef):
         """Return the WCS for reference sources.  The given dataRef must include the tract in its dataId.

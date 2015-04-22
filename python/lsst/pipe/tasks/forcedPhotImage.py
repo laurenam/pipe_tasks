@@ -64,6 +64,15 @@ class ForcedPhotImageConfig(Config):
     def setDefaults(self):
         self.doTweakCentroids = False
 
+def unpickler(func, args, kwargs):
+    """Function to call a function by its args and kwargs
+
+    Used for unpickling objects by providing a callable (like a class) and
+    its arguments.
+    """
+    return func(*args, **kwargs)
+
+
 class ForcedPhotImageTask(CmdLineTask):
     """Base class for performing forced measurement, in which the results (often just centroids) from
     regular measurement on another image are used to perform restricted measurement on a new image.
@@ -79,7 +88,7 @@ class ForcedPhotImageTask(CmdLineTask):
     ConfigClass = ForcedPhotImageConfig
     dataPrefix = ""  # Name to prepend to all input and output datasets (e.g. 'goodSeeingCoadd_')
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, butler=None, schema=None, **kwargs):
         """Initialize the task.
 
         ForcedPhotImageTask takes two keyword arguments beyond the usual CmdLineTask arguments:
@@ -88,26 +97,32 @@ class ForcedPhotImageTask(CmdLineTask):
            from disk.
         At least one of these arguments must be present; if both are, schema takes precedence.
         """
-        butler = kwargs.pop("butler", None)
-        refSchema = kwargs.pop("schema", None)
-        super(ForcedPhotImageTask, self).__init__(*args, **kwargs)
+        super(ForcedPhotImageTask, self).__init__(**kwargs)
         self.algMetadata = PropertyList()
-        self.makeSubtask("references", butler=butler, schema=refSchema)
-        if refSchema is None:
-            refSchema = self.references.schema
+        self.butler = butler
+        self.makeSubtask("references", butler=butler, schema=schema)
+        if schema is None:
+            schema = self.references.schema
+        else:
+            assert schema == self.references.schema, "Schema mismatch"
         # We make a SchemaMapper to transfer fields from the reference catalog
-        self.schemaMapper = lsst.afw.table.SchemaMapper(refSchema)
+        self.schemaMapper = lsst.afw.table.SchemaMapper(schema)
         # First we have to include the minimal schema all SourceCatalogs must have, but we don't
-        # want to transfer those fields from the refSchema (hence doMap=False)
+        # want to transfer those fields from the reference schema (hence doMap=False)
         self.schemaMapper.addMinimalSchema(lsst.afw.table.SourceTable.makeMinimalSchema(), False)
-        # Now we setup mappings from refSchema to the output schema, setting doReplace=True
+        # Now we setup mappings from reference schema to the output schema, setting doReplace=True
         # so we can set minimal schema fields if so configured.
         for refName, targetName in self.config.copyColumns.items():
-            refItem = refSchema.find(refName)
+            refItem = schema.find(refName)
             self.schemaMapper.addMapping(refItem.key, targetName, True) # doReplace=True
         # Extract the output schema, and add the actual forced measurement fields to it.
         self.schema = self.schemaMapper.getOutputSchema()
         self.makeSubtask("measurement", schema=self.schema, algMetadata=self.algMetadata, isForced=True)
+
+    def __reduce__(self):
+        """Pickler"""
+        return unpickler, (self.__class__, (self.butler,), dict(config=self.config, name=self._name,
+                                                                parentTask=self._parentTask, log=None))
 
     def getSchemaCatalogs(self):
         catalog = lsst.afw.table.SourceCatalog(self.schema)
@@ -184,6 +199,7 @@ class ForcedPhotImageTask(CmdLineTask):
         table.setMetadata(self.algMetadata)
         table.preallocate(len(references))
         for ref in references:
+            assert ref.schema == self.references.schema
             sources.addNew().assign(ref, self.schemaMapper)
         return sources
 
